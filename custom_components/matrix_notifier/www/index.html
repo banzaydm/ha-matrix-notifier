@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matrix Notifier</title>
+<style>
+:root{--bg:#1c1c1e;--card:#2c2c2e;--border:#3a3a3c;--text:#f2f2f7;--muted:#8e8e93;--accent:#0a84ff;--danger:#ff453a;--success:#30d158;--radius:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:12px}
+.header h1{font-size:20px;font-weight:600}
+.header .status{margin-left:auto;font-size:13px;padding:4px 12px;border-radius:20px}
+.status.ok{background:#1a3a1a;color:var(--success)}
+.status.err{background:#3a1a1a;color:var(--danger)}
+.status.loading{background:#3a3a1a;color:#ffd60a}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--card);padding:0 24px;overflow-x:auto}
+.tab{padding:12px 20px;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);font-size:14px;transition:all .2s;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.content{padding:24px;max-width:1000px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.card h2{font-size:16px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card h2 .badge{background:var(--accent);color:#fff;font-size:12px;padding:2px 8px;border-radius:10px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center}
+.stat .value{font-size:28px;font-weight:700;color:var(--accent)}
+.stat .label{font-size:13px;color:var(--muted);margin-top:4px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{min-height:80px;resize:vertical}
+.btn{padding:10px 20px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-sm{padding:6px 12px;font-size:13px}
+.rules-list{list-style:none}
+.rule-item{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.rule-item .info{flex:1}
+.rule-item .name{font-weight:600;margin-bottom:4px}
+.rule-item .meta{font-size:13px;color:var(--muted)}
+.rule-item .actions{display:flex;gap:8px}
+.toggle{position:relative;width:44px;height:24px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;inset:0;background:var(--border);border-radius:12px;transition:.2s}
+.toggle .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:var(--success)}
+.toggle input:checked+.slider:before{transform:translateX(20px)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:95%;max-width:640px;max-height:90vh;overflow-y:auto}
+.modal h2{margin-bottom:16px}
+.modal .form-row{margin-bottom:12px}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.hidden{display:none!important}
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:200;opacity:0;transition:opacity .3s;max-width:400px}
+.toast.show{opacity:1}
+.toast.success{background:var(--success);color:#000}
+.toast.error{background:var(--danger)}
+.user-list{list-style:none}
+.user-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border)}
+.user-item:last-child{border-bottom:none}
+.user-item .avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;color:#fff;flex-shrink:0}
+.user-item .uinfo{flex:1}
+.user-item .uname{font-weight:500}
+.user-item .uid{font-size:12px;color:var(--muted);font-family:monospace}
+.user-item .uactions{display:flex;gap:6px}
+.entity-picker{position:relative}
+.entity-picker input{width:100%}
+.entity-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:50;display:none}
+.entity-dropdown.open{display:block}
+.entity-option{padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.entity-option:hover{background:var(--bg)}
+.entity-option .eid{font-family:monospace;font-size:12px;color:var(--muted)}
+.entity-option .ename{font-size:14px}
+.room-check{display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px}
+.room-check input{width:auto}
+.room-check label{margin:0;font-size:13px;cursor:pointer;flex:1}
+.room-check .rid{font-size:11px;color:var(--muted);font-family:monospace}
+.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:20px 0 10px;font-weight:600}
+.section-title:first-child{margin-top:0}
+.room-management{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.room-mgmt-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px}
+.room-mgmt-card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.room-mgmt-card .form-row{margin-bottom:10px}
+.room-mgmt-card input,.room-mgmt-card select{font-size:13px}
+.member-list{max-height:150px;overflow-y:auto;margin-top:8px}
+.member-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+.member-item .mid{color:var(--muted);font-family:monospace;font-size:11px}
+.automation-option{padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.automation-option:hover{background:var(--bg)}
+.automation-option .aid{font-family:monospace;font-size:12px;color:var(--muted)}
+.automation-option .aname{font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📬 Matrix Notifier</h1>
+  <span id="statusBadge" class="status loading">Загрузка…</span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="dashboard">Главная</div>
+  <div class="tab" data-tab="users">Пользователи</div>
+  <div class="tab" data-tab="rooms">Комнаты</div>
+  <div class="tab" data-tab="rules">Правила</div>
+  <div class="tab" data-tab="send">Тест</div>
+  <div class="tab" data-tab="settings">Настройки</div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="content tab-content" id="tab-dashboard">
+  <div class="stats">
+    <div class="stat"><div class="value" id="statRules">—</div><div class="label">Правил</div></div>
+    <div class="stat"><div class="value" id="statRooms">—</div><div class="label">Комнат</div></div>
+    <div class="stat"><div class="value" id="statState">—</div><div class="label">Состояние</div></div>
+  </div>
+  <div class="card">
+    <h2>Интеграция</h2>
+    <div id="dashInfo" style="font-size:14px;color:var(--muted)">Загрузка…</div>
+  </div>
+</div>
+
+<!-- USERS -->
+<div class="content tab-content hidden" id="tab-users">
+  <div class="card">
+    <h2>Пользователи Matrix <span class="badge" id="usersCount">0</span>
+      <button class="btn btn-secondary btn-sm" onclick="loadUsers()" style="margin-left:auto">↻ Обновить</button>
+    </h2>
+    <ul class="user-list" id="usersList"></ul>
+  </div>
+</div>
+
+<!-- ROOMS -->
+<div class="content tab-content hidden" id="tab-rooms">
+  <div class="room-management">
+    <div class="room-mgmt-card">
+      <h3>➕ Создать комнату</h3>
+      <div class="form-row">
+        <label>Название комнаты</label>
+        <input type="text" id="newRoomName" placeholder="Мой чат">
+      </div>
+      <div class="form-row">
+        <label>Пригласить пользователей (через запятую)</label>
+        <input type="text" id="newRoomInvite" placeholder="@user1:server, @user2:server">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="createRoom()">Создать</button>
+    </div>
+    <div class="room-mgmt-card">
+      <h3>👥 Управление участниками</h3>
+      <div class="form-row">
+        <label>Комната</label>
+        <select id="mgmtRoom" onchange="loadRoomMembers()"></select>
+      </div>
+      <div class="form-row">
+        <label>Пригласить пользователя</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="inviteUserId" placeholder="@user:server" style="flex:1">
+          <button class="btn btn-primary btn-sm" onclick="inviteToRoom()">Пригласить</button>
+        </div>
+      </div>
+      <div class="section-title">Участники</div>
+      <div class="member-list" id="roomMembers"></div>
+    </div>
+  </div>
+</div>
+
+<!-- RULES -->
+<div class="content tab-content hidden" id="tab-rules">
+  <div class="card">
+    <h2>Правила уведомлений <span class="badge" id="rulesCount">0</span></h2>
+    <ul class="rules-list" id="rulesList"></ul>
+    <button class="btn btn-primary" onclick="openRuleModal()" style="margin-top:12px">+ Добавить правило</button>
+  </div>
+</div>
+
+<!-- SEND -->
+<div class="content tab-content hidden" id="tab-send">
+  <div class="card">
+    <h2>Тестовое сообщение</h2>
+    <div class="form-row">
+      <label>Комната</label>
+      <select id="sendRoom"></select>
+    </div>
+    <div class="form-row">
+      <label>Сообщение</label>
+      <textarea id="sendMsg" placeholder="Введите сообщение…"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="sendMessage()">Отправить</button>
+    <div id="sendResult" style="margin-top:12px;font-size:14px"></div>
+  </div>
+  <div class="card">
+    <h2>🎬 Запись видео (15 сек)</h2>
+    <div class="form-row">
+      <label>Камера</label>
+      <select id="videoCamera"><option value="">— выберите —</option></select>
+    </div>
+    <div class="form-row">
+      <label>Комната</label>
+      <select id="videoRoom"></select>
+    </div>
+    <div class="form-row">
+      <label>Длительность</label>
+      <select id="videoDuration">
+        <option value="5">5 секунд</option>
+        <option value="10">10 секунд</option>
+        <option value="15" selected>15 секунд</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Качество</label>
+      <select id="videoQuality">
+        <option value="original" selected>Оригинал (полный размер)</option>
+        <option value="720p">720p (сжатое)</option>
+        <option value="480p">480p (малый размер)</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="videoBtn" onclick="recordVideo()">🔴 Записать и отправить</button>
+    <div id="videoResult" style="margin-top:12px;font-size:14px"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="content tab-content hidden" id="tab-settings">
+  <div class="card">
+    <h2>Подключение к Matrix</h2>
+    <div id="setupNotConfigured">
+      <p style="font-size:14px;color:var(--muted);margin-bottom:16px">Интеграция не подключена. Введите данные вашего Matrix-сервера.</p>
+      <div class="form-row"><label>Homeserver (URL)</label><input type="text" id="setupHomeserver" placeholder="https://matrix.example.com"></div>
+      <div class="form-row"><label>Имя пользователя</label><input type="text" id="setupUsername" placeholder="@user:example.com"></div>
+      <div class="form-row"><label>Пароль</label><input type="password" id="setupPassword"></div>
+      <div id="setupRoomsSection" class="hidden">
+        <div class="section-title">Выберите комнаты</div>
+        <div id="setupRoomsList"></div>
+      </div>
+      <button class="btn btn-primary" id="setupBtn" onclick="handleSetup()">Подключить</button>
+    </div>
+    <div id="setupConfigured" class="hidden">
+      <p style="font-size:14px;color:var(--success)">✅ Подключено как <b id="setupAccount"></b></p>
+      <button class="btn btn-danger btn-sm" onclick="removeEntry()" style="margin-top:8px">Удалить подключение</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Токен Home Assistant</h2>
+    <div id="tokenAutoInfo" style="font-size:14px;color:var(--success);margin-bottom:12px">✅ Токен определён автоматически</div>
+    <div class="form-row">
+      <label>Или введите вручную</label>
+      <input type="password" id="settingsToken" placeholder="eyJ0eXAiOi…">
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Профиль → Безопасность → Длинноживущие токены</div>
+    </div>
+    <button class="btn btn-primary" onclick="saveToken()">Сохранить</button>
+  </div>
+</div>
+
+<!-- RULE MODAL -->
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal">
+    <h2 id="modalTitle">Новое правило</h2>
+    <input type="hidden" id="ruleEditId">
+    <div class="form-row">
+      <label>Название *</label>
+      <input id="ruleName" placeholder="Протечка в котельной">
+    </div>
+    <div class="form-row">
+      <label>Тип срабатывания</label>
+      <select id="ruleTriggerType" onchange="toggleTriggerType()">
+        <option value="entity">Сущность (датчик, выключатель…)</option>
+        <option value="automation">Автоматизация HA</option>
+      </select>
+    </div>
+    <div class="form-row" id="entitySection">
+      <label>Датчик / сущность *</label>
+      <select id="ruleEntity"><option value="">— выберите —</option></select>
+    </div>
+    <div class="form-row hidden" id="automationSection">
+      <label>Автоматизация *</label>
+      <select id="ruleAutomation"><option value="">— выберите —</option></select>
+    </div>
+    <div class="form-row">
+      <label>Состояние для срабатывания</label>
+      <select id="ruleToState">
+        <option value="on">on (включено)</option>
+        <option value="off">off (выключено)</option>
+        <option value="open">open (открыто)</option>
+        <option value="closed">closed (закрыто)</option>
+        <option value="home">home (дома)</option>
+        <option value="not_home">not_home (не дома)</option>
+        <option value="active">active (активно)</option>
+        <option value="inactive">inactive (неактивно)</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+        <option value="">Любое состояние</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Комнаты *</label>
+      <select id="ruleRooms" multiple size="4" style="min-height:100px"></select>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Удерживайте Ctrl/Cmd для выбора нескольких</div>
+    </div>
+    <div class="form-row">
+      <label>Сообщение (Jinja2-шаблон)</label>
+      <textarea id="ruleMessage">🚨 {{ name }}
+Датчик: {{ entity_id }}
+Состояние: {{ state }}
+Время: {{ now().strftime('%H:%M %d.%m.%Y') }}</textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5">
+        Доступные переменные:<br>
+        <code>{{ name }}</code> — имя датчика (или автоматизации)<br>
+        <code>{{ entity_id }}</code> — ID датчика-триггера<br>
+        <code>{{ state }}</code> — новое состояние<br>
+        <code>{{ trigger_description }}</code> — описание триггера (для автоматизаций)<br>
+        <code>{{ trigger_name }}</code>, <code>{{ trigger_from }}</code>, <code>{{ trigger_to }}</code> — детали триггера
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Камера для снимка (необязательно)</label>
+      <select id="ruleCamera"><option value="">— нет —</option></select>
+    </div>
+    <div class="form-row">
+      <label>Что отправлять с уведомлением</label>
+      <select id="ruleMediaMode">
+        <option value="none" selected>Ничего (только текст)</option>
+        <option value="snapshot">📷 Только снимок</option>
+        <option value="video">🎬 Только видео</option>
+        <option value="both">📷🎬 Снимок + видео</option>
+      </select>
+      <div id="ruleVideoDurationRow" class="hidden" style="margin-top:8px">
+        <label>Длительность видео</label>
+        <select id="ruleVideoDuration">
+          <option value="5">5 секунд</option>
+          <option value="10">10 секунд</option>
+          <option value="15" selected>15 секунд</option>
+        </select>
+        <label style="margin-top:8px;display:block">Качество видео</label>
+        <select id="ruleVideoQuality">
+          <option value="original" selected>Оригинал (полный размер)</option>
+          <option value="720p">720p (сжатое)</option>
+          <option value="480p">480p (малый размер)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="ruleEnabled" checked style="width:auto"> Включено
+      </label>
+    </div>
+    <div id="ruleError" class="hidden" style="background:#3a1a1a;color:#ff6961;padding:10px;border-radius:8px;font-size:13px;margin-bottom:8px"></div>
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeRuleModal()">Отмена</button>
+      <button class="btn btn-primary" id="ruleSaveBtn" onclick="saveRule()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
+
+function detectToken(){
+  try{
+    const raw=localStorage.getItem('hassAuth');
+    if(raw){const o=JSON.parse(raw);if(o.access_token)return o.access_token;if(o.data&&o.data.access_token)return o.data.access_token}
+  }catch(e){}
+  return localStorage.getItem('mn_token')||'';
+}
+let TOKEN=detectToken();
+let STATUS=null,ENTITIES=[],ROOMS=[],SETUP_ROOMS=null;
+
+$$('.tab').forEach(t=>t.addEventListener('click',()=>{
+  $$('.tab').forEach(x=>x.classList.remove('active'));
+  $$('.tab-content').forEach(x=>x.classList.add('hidden'));
+  t.classList.add('active');
+  $('#tab-'+t.dataset.tab).classList.remove('hidden');
+  if(t.dataset.tab==='users')loadUsers();
+  if(t.dataset.tab==='rooms')loadRooms();
+  if(t.dataset.tab==='settings')refreshSettings();
+}));
+
+function toast(msg,ok=true){
+  const el=$('#toast');el.textContent=msg;el.className='toast show '+(ok?'success':'error');
+  setTimeout(()=>el.classList.remove('show'),4000);
+}
+
+async function api(path,opts={}){
+  TOKEN=detectToken();
+  if(!TOKEN)throw new Error('Токен не задан');
+  const r=await fetch('/api'+path,{headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},...opts});
+  if(!r.ok){const t=await r.text();throw new Error(r.status+': '+t)}
+  return r.json();
+}
+
+async function loadStatus(){
+  try{
+    STATUS=await api('/matrix_notifier/status');
+    $('#statusBadge').className='status ok';
+    $('#statusBadge').textContent=STATUS.configured?'Подключено':'Не настроено';
+    $('#statRules').textContent=STATUS.rules?.length||0;
+    $('#statRooms').textContent=STATUS.rooms?.length||0;
+    $('#statState').textContent=STATUS.state||'—';
+    $('#dashInfo').innerHTML=STATUS.configured?`<b>${STATUS.title}</b><br>Rooms: ${STATUS.rooms.join(', ')||'—'}`:'Интеграция не настроена.';
+    renderRules(STATUS.rules||[]);
+    await loadRooms();
+    refreshSettings();
+  }catch(e){$('#statusBadge').className='status err';$('#statusBadge').textContent='Ошибка';console.error(e)}
+}
+
+async function loadRooms(){
+  try{
+    ROOMS=await api('/matrix_notifier/rooms');
+  }catch(e){ROOMS=(STATUS?.rooms||[]).map(r=>({room_id:r,name:r}))}
+  fillRooms();
+}
+
+function roomLabel(r){return r.name&&r.name!==r.room_id?`${r.name}`:r.room_id}
+function roomById(id){return ROOMS.find(r=>r.room_id===id)}
+
+function fillRooms(){
+  const sel=$('#sendRoom');sel.innerHTML='<option value="">Все комнаты</option>';
+  const vsel=$('#videoRoom');vsel.innerHTML='';
+  const rsel=$('#ruleRooms');const prev=[...rsel.selectedOptions].map(o=>o.value);rsel.innerHTML='';
+  const mgmt=$('#mgmtRoom');mgmt.innerHTML='<option value="">—</option>';
+  ROOMS.forEach(r=>{
+    const label=roomLabel(r);
+    sel.innerHTML+=`<option value="${r.room_id}">${esc(label)}</option>`;
+    vsel.innerHTML+=`<option value="${r.room_id}">${esc(label)}</option>`;
+    const o=document.createElement('option');o.value=r.room_id;o.textContent=label;
+    rsel.appendChild(o);
+    mgmt.innerHTML+=`<option value="${r.room_id}">${esc(label)}</option>`;
+  });
+  // restore previous selection
+  [...rsel.options].forEach(o=>{if(prev.includes(o.value))o.selected=true});
+}
+
+function fillVideoCameras(){
+  const sel=$('#videoCamera');
+  sel.innerHTML='<option value="">— выберите —</option>';
+  ENTITIES.filter(e=>e.domain==='camera').forEach(e=>{
+    const o=document.createElement('option');o.value=e.entity_id;o.textContent=`${e.name} (${e.entity_id})`;
+    sel.appendChild(o);
+  });
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+
+// === ENTITIES / AUTOMATIONS ===
+async function loadEntities(){
+  try{
+    const states=await api('/states');
+    ENTITIES=states.map(s=>({entity_id:s.entity_id,name:s.attributes?.friendly_name||s.entity_id,domain:s.entity_id.split('.')[0]})).sort((a,b)=>a.name.localeCompare(b.name));
+  }catch(e){console.error(e)}
+  populateSelects();
+  fillVideoCameras();
+}
+
+function populateSelects(){
+  // entity select (exclude automation domain)
+  const entSel=$('#ruleEntity');
+  const entVal=entSel.value;
+  entSel.innerHTML='<option value="">— выберите —</option>';
+  const domains={};
+  ENTITIES.filter(e=>e.domain!=='automation').forEach(e=>{
+    (domains[e.domain]=domains[e.domain]||[]).push(e);
+  });
+  Object.keys(domains).sort().forEach(d=>{
+    const og=document.createElement('optgroup');og.label=d;
+    domains[d].forEach(e=>{
+      const o=document.createElement('option');o.value=e.entity_id;o.textContent=`${e.name} (${e.entity_id})`;
+      og.appendChild(o);
+    });
+    entSel.appendChild(og);
+  });
+  entSel.value=entVal;
+
+  // automation select
+  const autoSel=$('#ruleAutomation');
+  const autoVal=autoSel.value;
+  autoSel.innerHTML='<option value="">— выберите —</option>';
+  ENTITIES.filter(e=>e.domain==='automation').forEach(e=>{
+    const o=document.createElement('option');o.value=e.entity_id;o.textContent=`${e.name} (${e.entity_id})`;
+    autoSel.appendChild(o);
+  });
+  autoSel.value=autoVal;
+
+  // camera select
+  const camSel=$('#ruleCamera');
+  const camVal=camSel.value;
+  camSel.innerHTML='<option value="">— нет —</option>';
+  ENTITIES.filter(e=>e.domain==='camera').forEach(e=>{
+    const o=document.createElement('option');o.value=e.entity_id;o.textContent=`${e.name} (${e.entity_id})`;
+    camSel.appendChild(o);
+  });
+  camSel.value=camVal;
+}
+
+function toggleTriggerType(){
+  const type=$('#ruleTriggerType').value;
+  $('#entitySection').classList.toggle('hidden',type==='automation');
+  $('#automationSection').classList.toggle('hidden',type!=='automation');
+}
+
+// === RULES ===
+function renderRules(rules){
+  const ul=$('#rulesList');ul.innerHTML='';
+  $('#rulesCount').textContent=rules.length;
+  if(!rules.length){ul.innerHTML='<li style="color:var(--muted);padding:12px">Нет правил</li>';return}
+  rules.forEach(r=>{
+    const li=document.createElement('li');li.className='rule-item';
+    const entityLabel=r.automation?`⚙️ ${r.automation}`:r.entity_id;
+    li.innerHTML=`
+      <label class="toggle"><input type="checkbox" ${r.enabled?'checked':''} onchange="toggleRule('${r.subentry_id}',this.checked)"><span class="slider"></span></label>
+      <div class="info">
+        <div class="name">${esc(r.title)}</div>
+        <div class="meta">${esc(entityLabel)} → ${esc(r.to_state||'any')} | ${r.rooms?.length||0} комнат${r.camera?' | 📷':''}</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary btn-sm" onclick="testRule('${r.subentry_id}')" title="Тест правила">▶️</button>
+        <button class="btn btn-secondary btn-sm" onclick='editRule(${JSON.stringify(r).replace(/'/g,"&#39;")})'>✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.subentry_id}')">🗑</button>
+      </div>`;
+    ul.appendChild(li);
+  });
+}
+
+let modalLoading=false;
+function openRuleModal(rule){
+  $('#ruleError').classList.add('hidden');
+  if(!ENTITIES.length&&!modalLoading){
+    modalLoading=true;
+    loadEntities().finally(()=>{modalLoading=false;_fillRuleForm(rule)});
+    return;
+  }
+  _fillRuleForm(rule);
+}
+function _fillRuleForm(rule){
+  populateSelects();
+  fillRooms();
+  $('#modalTitle').textContent=rule?'Редактирование правила':'Новое правило';
+  $('#ruleEditId').value=rule?.subentry_id||'';
+  $('#ruleName').value=rule?.name||rule?.title||'';
+  $('#ruleEntity').value=rule?.entity_id||'';
+  $('#ruleAutomation').value=rule?.automation||'';
+  $('#ruleTriggerType').value=rule?.automation?'automation':'entity';
+  toggleTriggerType();
+  $('#ruleToState').value=rule?.to_state||'on';
+  $('#ruleMessage').value=rule?.message||'🚨 {{ name }}\nДатчик: {{ entity_id }}\nСостояние: {{ state }}\nВремя: {{ now().strftime(\'%H:%M %d.%m.%Y\') }}';
+  $('#ruleCamera').value=rule?.camera||'';
+  $('#ruleMediaMode').value=rule?.media_mode||(rule?.video?'video':'snapshot');
+  $('#ruleVideoDuration').value=rule?.video_duration||15;
+  $('#ruleVideoQuality').value=rule?.video_quality||'original';
+  const vm=$('#ruleMediaMode').value;
+  $('#ruleVideoDurationRow').classList.toggle('hidden',!(vm==='video'||vm==='both'));
+  $('#ruleEnabled').checked=rule?.enabled!==false;
+  // select rooms in multi-select
+  const rsel=$('#ruleRooms');
+  [...rsel.options].forEach(o=>{o.selected=rule?.rooms?.includes(o.value)||false});
+  $('#ruleModal').classList.add('open');
+}
+function closeRuleModal(){$('#ruleModal').classList.remove('open')}
+function editRule(r){openRuleModal(r)}
+
+function ruleError(msg){
+  const el=$('#ruleError');
+  if(msg){el.textContent=msg;el.classList.remove('hidden')}
+  else el.classList.add('hidden');
+}
+
+$('#ruleMediaMode')?.addEventListener('change',function(){
+  const v=this.value==='video'||this.value==='both';
+  $('#ruleVideoDurationRow').classList.toggle('hidden',!v);
+});
+
+async function saveRule(){
+  ruleError('');
+  const name=$('#ruleName').value.trim();
+  if(!name){ruleError('Введите название правила');return}
+  const rooms=[...$('#ruleRooms').selectedOptions].map(o=>o.value);
+  if(!rooms.length){ruleError('Выберите хотя бы одну комнату');return}
+  const isAutomation=$('#ruleTriggerType').value==='automation';
+  const triggerEntity=isAutomation?$('#ruleAutomation').value:$('#ruleEntity').value;
+  if(!triggerEntity){ruleError('Выберите '+(isAutomation?'автоматизацию':'сущность'));return}
+  let mediaMode=$('#ruleMediaMode').value;
+  const camera=$('#ruleCamera').value;
+  if(!camera)mediaMode='none';
+  const data={
+    name,
+    entity_id:isAutomation?null:triggerEntity,
+    automation:isAutomation?triggerEntity:null,
+    to_state:$('#ruleToState').value,
+    rooms,message:$('#ruleMessage').value,
+    camera:camera||null,
+    camera_filename:'snapshot.jpg',
+    media_mode:mediaMode,
+    video_duration:parseInt($('#ruleVideoDuration').value)||15,
+    video_quality:$('#ruleVideoQuality').value||'original',
+    enabled:$('#ruleEnabled').checked
+  };
+  const id=$('#ruleEditId').value;
+  const btn=$('#ruleSaveBtn');
+  btn.disabled=true;btn.textContent='Сохранение…';
+  try{
+    if(id)await api('/matrix_notifier/rules/'+id,{method:'PUT',body:JSON.stringify(data)});
+    else await api('/matrix_notifier/rules',{method:'POST',body:JSON.stringify(data)});
+    toast('Сохранено');closeRuleModal();setTimeout(loadStatus,1500);
+  }catch(e){
+    ruleError('Ошибка сохранения: '+e.message);
+    toast(e.message,false);
+  }finally{
+    btn.disabled=false;btn.textContent='Сохранить';
+  }
+}
+
+async function deleteRule(id){
+  if(!confirm('Удалить правило?'))return;
+  try{await api('/matrix_notifier/rules/'+id,{method:'DELETE'});toast('Удалено');setTimeout(loadStatus,1500)}
+  catch(e){toast(e.message,false)}
+}
+
+async function testRule(id){
+  const btn=event.currentTarget;btn.disabled=true;
+  try{
+    toast('Тест правила…');
+    await api('/matrix_notifier/rules/'+id+'/test',{method:'POST'});
+    toast('Правило сработало ✓');
+  }catch(e){toast(e.message,false)}
+  finally{btn.disabled=false}
+}
+
+async function toggleRule(id,val){
+  try{
+    const r=STATUS?.rules?.find(x=>x.subentry_id===id);
+    if(!r)return;
+    const data={...r,enabled:val};delete data.subentry_id;
+    await api('/matrix_notifier/rules/'+id,{method:'PUT',body:JSON.stringify(data)});
+    toast(val?'Включено':'Выключено');setTimeout(loadStatus,1500);
+  }catch(e){toast(e.message,false);setTimeout(loadStatus,500)}
+}
+
+// === USERS ===
+async function loadUsers(){
+  try{
+    const res=await api('/matrix_notifier/users');
+    const users=res.users||[];
+    $('#usersCount').textContent=users.length;
+    const ul=$('#usersList');ul.innerHTML='';
+    if(!users.length){ul.innerHTML='<li style="color:var(--muted);padding:12px">Нет пользователей</li>';return}
+    users.sort((a,b)=>(a.display_name||'').localeCompare(b.display_name||''));
+    users.forEach(u=>{
+      const initial=(u.display_name||u.user_id)[0].toUpperCase();
+      const li=document.createElement('li');li.className='user-item';
+      li.innerHTML=`
+        <div class="avatar">${esc(initial)}</div>
+        <div class="uinfo">
+          <div class="uname">${esc(u.display_name)}</div>
+          <div class="uid">${esc(u.user_id)}</div>
+        </div>
+        <div class="uactions">
+          <button class="btn btn-secondary btn-sm" onclick="quickInvite('${u.user_id}')">➕ В комнату</button>
+        </div>`;
+      ul.appendChild(li);
+    });
+  }catch(e){$('#usersList').innerHTML='<li style="color:var(--danger);padding:12px">Ошибка: '+esc(e.message)+'</li>'}
+}
+
+async function quickInvite(userId){
+  const sel=prompt('Введите ID комнаты или выберите из списка:\n'+ROOMS.map(r=>`${r.room_id} — ${roomLabel(r)}`).join('\n'));
+  if(!sel)return;
+  const roomId=sel.trim();
+  try{
+    await api(`/matrix_notifier/rooms/${encodeURIComponent(roomId)}/invite`,{method:'POST',body:JSON.stringify({user_id:userId})});
+    toast('Приглашение отправлено');
+  }catch(e){toast(e.message,false)}
+}
+
+// === ROOMS ===
+async function createRoom(){
+  const name=$('#newRoomName').value.trim();
+  const inviteStr=$('#newRoomInvite').value.trim();
+  if(!name){toast('Введите название',false);return}
+  const invite=inviteStr?inviteStr.split(',').map(s=>s.trim()).filter(Boolean):[];
+  try{
+    const res=await api('/matrix_notifier/rooms/create',{method:'POST',body:JSON.stringify({name,invite})});
+    toast('Комната создана: '+res.room_id);
+    $('#newRoomName').value='';$('#newRoomInvite').value='';
+    loadRooms();
+  }catch(e){toast(e.message,false)}
+}
+
+async function loadRoomMembers(){
+  const roomId=$('#mgmtRoom').value;
+  if(!roomId){$('#roomMembers').innerHTML='';return}
+  try{
+    const res=await api(`/matrix_notifier/rooms/${encodeURIComponent(roomId)}/members`);
+    const members=res.members||[];
+    $('#roomMembers').innerHTML=members.map(m=>`
+      <div class="member-item">
+        <span>${esc(m.display_name)}</span>
+        <span class="mid">${esc(m.user_id)}</span>
+        <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="kickFromRoom('${roomId}','${m.user_id}')">✕</button>
+      </div>`).join('')||'<div style="color:var(--muted);font-size:13px">Нет участников</div>';
+  }catch(e){$('#roomMembers').innerHTML='<div style="color:var(--danger);font-size:13px">'+esc(e.message)+'</div>'}
+}
+
+async function inviteToRoom(){
+  const roomId=$('#mgmtRoom').value;
+  const userId=$('#inviteUserId').value.trim();
+  if(!roomId||!userId){toast('Выберите комнату и введите user_id',false);return}
+  try{
+    await api(`/matrix_notifier/rooms/${encodeURIComponent(roomId)}/invite`,{method:'POST',body:JSON.stringify({user_id:userId})});
+    toast('Приглашение отправлено');$('#inviteUserId').value='';
+    loadRoomMembers();
+  }catch(e){toast(e.message,false)}
+}
+
+async function kickFromRoom(roomId,userId){
+  if(!confirm(`Исключить ${userId}?`))return;
+  try{
+    await api(`/matrix_notifier/rooms/${encodeURIComponent(roomId)}/kick`,{method:'POST',body:JSON.stringify({user_id:userId})});
+    toast('Исключён');loadRoomMembers();
+  }catch(e){toast(e.message,false)}
+}
+
+// === SEND ===
+async function sendMessage(){
+  const msg=$('#sendMsg').value.trim();
+  if(!msg){toast('Введите сообщение',false);return}
+  try{
+    const res=await api('/matrix_notifier/send',{method:'POST',body:JSON.stringify({message:msg,room_id:$('#sendRoom').value||null})});
+    const okCount=Object.keys(res.sent||{}).length;
+    $('#sendResult').innerHTML=`<span style="color:var(--success)">✅ Отправлено в ${okCount} комнат(ы)</span>`;
+    if(res.errors?.length)$('#sendResult').innerHTML+=`<br><span style="color:var(--danger)">${res.errors.join('<br>')}</span>`;
+    toast('Отправлено');
+  }catch(e){toast(e.message,false)}
+}
+
+async function recordVideo(){
+  const camera=$('#videoCamera').value;
+  const roomId=$('#videoRoom').value;
+  const duration=parseInt($('#videoDuration').value)||15;
+  const quality=$('#videoQuality').value||'original';
+  if(!camera){toast('Выберите камеру',false);return}
+  if(!roomId){toast('Выберите комнату',false);return}
+  const btn=$('#videoBtn');
+  btn.disabled=true;
+  btn.textContent=`⏳ Запись ${duration} сек… не закрывайте вкладку`;
+  $('#videoResult').innerHTML='';
+  const t0=Date.now();
+  const timer=setInterval(()=>{
+    const s=Math.floor((Date.now()-t0)/1000);
+    btn.textContent=`⏳ Запись… ${Math.min(s,duration)}/${duration} сек (затем кодирование)`;
+  },1000);
+  try{
+    const res=await api('/matrix_notifier/video',{method:'POST',body:JSON.stringify({camera,room_id:roomId,duration,fps:15,quality})});
+    $('#videoResult').innerHTML=`<span style="color:var(--success)">✅ Видео отправлено (${(res.size/1024/1024).toFixed(1)} МБ, ${(res.duration_ms/1000).toFixed(1)} сек)</span>`;
+    toast('Видео отправлено');
+  }catch(e){
+    $('#videoResult').innerHTML=`<span style="color:var(--danger)">❌ ${esc(e.message)}</span>`;
+    toast(e.message,false);
+  }finally{
+    clearInterval(timer);
+    btn.disabled=false;
+    btn.textContent='🔴 Записать и отправить';
+  }
+}
+
+// === SETTINGS ===
+async function refreshSettings(){
+  try{
+    const st=await api('/matrix_notifier/status');
+    if(st.configured){$('#setupNotConfigured').classList.add('hidden');$('#setupConfigured').classList.remove('hidden');$('#setupAccount').textContent=st.title||'—'}
+    else{$('#setupNotConfigured').classList.remove('hidden');$('#setupConfigured').classList.add('hidden')}
+  }catch(e){}
+}
+
+async function handleSetup(){
+  const hs=$('#setupHomeserver').value.trim(),un=$('#setupUsername').value.trim(),pw=$('#setupPassword').value;
+  if(!hs||!un||!pw){toast('Заполните все поля',false);return}
+  const btn=$('#setupBtn');
+  if(!SETUP_ROOMS){
+    btn.disabled=true;btn.textContent='Вход…';
+    try{
+      const res=await api('/matrix_notifier/setup',{method:'POST',body:JSON.stringify({homeserver:hs,username:un,password:pw})});
+      if(res.status==='rooms_required'){
+        SETUP_ROOMS=res.rooms;
+        const list=$('#setupRoomsList');list.innerHTML='';
+        res.rooms.forEach(r=>{
+          const id='sr_'+r.room_id.replace(/[^a-zA-Z0-9]/g,'_');
+          list.innerHTML+=`<div class="room-check"><input type="checkbox" id="${id}" value="${r.room_id}" checked><label for="${id}">${esc(r.name)}</label></div>`;
+        });
+        $('#setupRoomsSection').classList.remove('hidden');btn.textContent='Сохранить';
+      }else{toast('Подключено!');SETUP_ROOMS=null;loadStatus()}
+    }catch(e){toast(e.message,false)}
+    btn.disabled=false;
+  }else{
+    const rooms=$$('#setupRoomsList input:checked').map(c=>c.value);
+    if(!rooms.length){toast('Выберите комнату',false);return}
+    btn.disabled=true;btn.textContent='Сохранение…';
+    try{
+      await api('/matrix_notifier/setup',{method:'POST',body:JSON.stringify({homeserver:hs,username:un,password:pw,rooms})});
+      toast('Подключено!');SETUP_ROOMS=null;$('#setupRoomsSection').classList.add('hidden');loadStatus();
+    }catch(e){toast(e.message,false)}
+    btn.disabled=false;btn.textContent='Подключить';
+  }
+}
+
+async function removeEntry(){
+  if(!confirm('Удалить подключение?'))return;
+  try{
+    const entries=await api('/config/config_entries/entry');
+    const mn=entries.find(e=>e.domain==='matrix_notifier');
+    if(mn){await fetch('/api/config/config_entries/entry/'+mn.entry_id,{method:'DELETE',headers:{'Authorization':'Bearer '+TOKEN}});toast('Удалено');loadStatus()}
+  }catch(e){toast(e.message,false)}
+}
+
+function saveToken(){TOKEN=$('#settingsToken').value.trim();localStorage.setItem('mn_token',TOKEN);toast('Сохранено');loadStatus()}
+
+loadEntities();
+loadStatus();
+setInterval(loadStatus,30000);
+</script>
+</body>
+</html>

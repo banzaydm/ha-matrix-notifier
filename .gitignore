@@ -1,0 +1,11 @@
+# Локальные файлы деплоя (наши специфичные entity_id/заметки) — не публикуем
+deploy/
+
+# Python
+__pycache__/
+*.pyc
+
+# Редакторы / OS
+.vscode/
+.idea/
+.DS_Store

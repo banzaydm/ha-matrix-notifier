@@ -1,0 +1,12 @@
+send:
+  fields:
+    message:
+      required: true
+      example: "Протечка воды в ванной!"
+      selector:
+        text:
+    room_id:
+      required: false
+      example: "!roomid:example.com"
+      selector:
+        text:

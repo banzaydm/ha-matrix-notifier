@@ -1,0 +1,11 @@
+{
+  "domain": "matrix_notifier",
+  "name": "Matrix Notifier",
+  "codeowners": ["@banzaydm"],
+  "config_flow": true,
+  "documentation": "https://github.com/banzaydm/ha-matrix-notifier",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/banzaydm/ha-matrix-notifier/issues",
+  "version": "1.0.0"
+}
