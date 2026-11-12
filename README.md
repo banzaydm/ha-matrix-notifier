@@ -1,7 +1,7 @@
 # Matrix Notifier для Home Assistant
 
 Интеграция для отправки уведомлений из Home Assistant в комнаты Matrix через удобный UI: текст, снимки камер и видеозаписи с RTSP.
-
+Задача проекта - все настраивать через графический интерфейс без необходимости править конфигурации.
 ## Возможности
 
 - **Config Flow** — настройка через UI, без YAML
@@ -26,6 +26,12 @@
 - **Автоматическое обновление токенов** — переподключение при разрыве
 - **Русский интерфейс**
 
+## Установка через HACS
+1. HACS → меню ⋮ → Custom repositories
+2. Ввести https://github.com/banzaydm/ha-matrix-notifier, тип Integration
+3. В каталоге HACS появится «Matrix Notifier» → Install → перезапуск HA
+4. Настройки → Интеграции → + → Matrix Notifier → вводит свой homeserver, логин/пароль бота, device ID
+5. Панель управления — в сайдбаре HA
 ## Установка
 
 1. Скопируйте папку `custom_components/matrix_notifier` в `/config/custom_components/` вашего HA
