@@ -12,8 +12,11 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CHANNELS,
+    CHANNEL_MATRIX,
     CONF_CAMERA,
     CONF_CAMERA_FILENAME,
+    CONF_CHANNELS,
     CONF_DEVICE_ID,
     CONF_ENABLED,
     CONF_ENTITY_ID,
@@ -22,6 +25,8 @@ from .const import (
     CONF_NAME,
     CONF_PASSWORD,
     CONF_ROOMS,
+    CONF_TELEGRAM_BOT_TOKEN,
+    CONF_TELEGRAM_CHATS,
     CONF_TO_STATE,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
@@ -34,6 +39,7 @@ from .const import (
 )
 from .notifier import MatrixClient, MatrixLoginError
 from .rules import DEFAULT_MESSAGE
+from .telegram import TelegramClient, TelegramError, parse_chat_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +61,7 @@ class MatrixNotifierConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     _client: MatrixClient | None = None
     _creds: dict[str, Any] = {}
+    _rooms: list[str] = []
 
     @classmethod
     @callback
@@ -114,19 +121,8 @@ class MatrixNotifierConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_user()
 
         if user_input is not None:
-            return self.async_create_entry(
-                title=f"Matrix Notifier ({client.user_id})",
-                data={
-                    CONF_HOMESERVER: creds[CONF_HOMESERVER],
-                    CONF_USERNAME: creds[CONF_USERNAME],
-                    CONF_PASSWORD: creds[CONF_PASSWORD],
-                    CONF_DEVICE_ID: creds.get(CONF_DEVICE_ID, DEFAULT_DEVICE_ID),
-                    CONF_VERIFY_SSL: creds.get(
-                        CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
-                    ),
-                    CONF_ROOMS: user_input.get(CONF_ROOMS, []),
-                },
-            )
+            self._rooms = user_input.get(CONF_ROOMS, [])
+            return await self.async_step_telegram()
 
         # fetch rooms in executor
         try:
@@ -162,6 +158,65 @@ class MatrixNotifierConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="rooms",
             data_schema=rooms_schema,
+            errors=errors,
+        )
+
+    async def async_step_telegram(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Optional Telegram setup (bot token + chat ids)."""
+        errors: dict[str, str] = {}
+
+        client: MatrixClient | None = self._client
+        creds: dict[str, Any] = self._creds
+
+        # flow instance was recreated (restart) — go back to credentials
+        if client is None:
+            return await self.async_step_user()
+
+        if user_input is not None:
+            token = (user_input.get(CONF_TELEGRAM_BOT_TOKEN) or "").strip()
+            chats = parse_chat_ids(user_input.get(CONF_TELEGRAM_CHATS))
+
+            if token:
+                # validate token via getMe
+                try:
+                    await self.hass.async_add_executor_job(
+                        TelegramClient(token).get_me
+                    )
+                except TelegramError:
+                    errors["base"] = "invalid_telegram_token"
+            if not errors:
+                data: dict[str, Any] = {
+                    CONF_HOMESERVER: creds[CONF_HOMESERVER],
+                    CONF_USERNAME: creds[CONF_USERNAME],
+                    CONF_PASSWORD: creds[CONF_PASSWORD],
+                    CONF_DEVICE_ID: creds.get(
+                        CONF_DEVICE_ID, DEFAULT_DEVICE_ID
+                    ),
+                    CONF_VERIFY_SSL: creds.get(
+                        CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
+                    ),
+                    CONF_ROOMS: self._rooms,
+                    CONF_CHANNELS: [CHANNEL_MATRIX],
+                }
+                if token:
+                    data[CONF_TELEGRAM_BOT_TOKEN] = token
+                    data[CONF_TELEGRAM_CHATS] = chats
+                return self.async_create_entry(
+                    title=f"Matrix Notifier ({client.user_id})", data=data
+                )
+
+        return self.async_show_form(
+            step_id="telegram",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_TELEGRAM_BOT_TOKEN, default=""
+                    ): str,
+                    vol.Optional(CONF_TELEGRAM_CHATS, default=""): str,
+                }
+            ),
             errors=errors,
         )
 

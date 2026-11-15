@@ -30,6 +30,8 @@ from .const import (
     CONF_MESSAGE,
     CONF_PASSWORD,
     CONF_ROOMS,
+    CONF_TELEGRAM_BOT_TOKEN,
+    CONF_TELEGRAM_CHATS,
     CONF_TO_STATE,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
@@ -41,6 +43,7 @@ from .const import (
 )
 from .notifier import MatrixClient, MatrixLoginError, MatrixSendError
 from .rules import RuleEngine, build_rules
+from .telegram import TelegramClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,14 +89,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "rooms": data.get(CONF_ROOMS, []),
+        "telegram": None,
+        "telegram_chats": [],
     }
+
+    # Optional Telegram channel
+    tg_token = data.get(CONF_TELEGRAM_BOT_TOKEN)
+    if tg_token:
+        tg = TelegramClient(
+            tg_token, verify_ssl=data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
+        )
+        try:
+            await hass.async_add_executor_job(tg.get_me)
+        except Exception as err:  # noqa: BLE001
+            # don't fail setup — Telegram just stays unavailable
+            _LOGGER.warning("Matrix Notifier: Telegram token invalid: %s", err)
+            tg = None
+        if tg:
+            hass.data[DOMAIN][entry.entry_id]["telegram"] = tg
+            hass.data[DOMAIN][entry.entry_id]["telegram_chats"] = (
+                data.get(CONF_TELEGRAM_CHATS) or []
+            )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _register_services(hass, entry)
 
     # Rule engine — loads notification rules (subentries) and listens
-    engine = RuleEngine(hass, client)
+    ctx = hass.data[DOMAIN][entry.entry_id]
+    engine = RuleEngine(
+        hass,
+        client,
+        telegram=ctx.get("telegram"),
+        telegram_chats=ctx.get("telegram_chats") or [],
+    )
     engine.load_rules(build_rules(hass, entry))
     engine.sync_devices(entry)
     hass.data[DOMAIN][entry.entry_id]["engine"] = engine

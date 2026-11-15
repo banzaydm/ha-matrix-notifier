@@ -31,15 +31,19 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import slugify
 
 from .const import (
+    CHANNEL_MATRIX,
+    CHANNEL_TELEGRAM,
     CONF_AUTOMATION,
     CONF_CAMERA,
     CONF_CAMERA_FILENAME,
+    CONF_CHANNELS,
     CONF_ENABLED,
     CONF_ENTITY_ID,
     CONF_MEDIA_MODE,
     CONF_MESSAGE,
     CONF_NAME,
     CONF_ROOMS,
+    CONF_TELEGRAM_CHATS,
     CONF_TO_STATE,
     CONF_VIDEO,
     CONF_VIDEO_DURATION,
@@ -50,6 +54,7 @@ from .const import (
     SUBENTRY_RULE,
 )
 from .notifier import MatrixClient, MatrixSendError
+from .telegram import TelegramClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,6 +86,8 @@ class Rule:
     media_mode: str = "none"  # none | snapshot | video | both
     video_duration: int = 15
     video_quality: str = "original"
+    channels: list[str] = field(default_factory=lambda: [CHANNEL_MATRIX])
+    telegram_chats: list[str] = field(default_factory=list)
     enabled: bool = True
     template: Template | None = field(default=None, repr=False)
 
@@ -97,7 +104,17 @@ def rule_from_subentry(subentry: Any) -> Rule | None:
     entity_id = data.get(CONF_ENTITY_ID)
     automation = data.get(CONF_AUTOMATION)
     rooms = data.get(CONF_ROOMS) or []
-    if not rooms or (not entity_id and not automation):
+    channels = [
+        c
+        for c in (data.get(CONF_CHANNELS) or [CHANNEL_MATRIX])
+        if c in (CHANNEL_MATRIX, CHANNEL_TELEGRAM)
+    ] or [CHANNEL_MATRIX]
+    tg_chats = data.get(CONF_TELEGRAM_CHATS) or []
+    if (not entity_id and not automation) or (
+        CHANNEL_MATRIX in channels
+        and not rooms
+        and CHANNEL_TELEGRAM not in channels
+    ):
         _LOGGER.warning(
             "Rule '%s' ignored: no entity/automation or rooms",
             subentry.title,
@@ -125,6 +142,8 @@ def rule_from_subentry(subentry: Any) -> Rule | None:
         media_mode=media_mode,
         video_duration=int(data.get(CONF_VIDEO_DURATION) or 15),
         video_quality=str(data.get(CONF_VIDEO_QUALITY) or "original"),
+        channels=channels,
+        telegram_chats=list(tg_chats),
         enabled=bool(data.get(CONF_ENABLED, True)),
     )
 
@@ -132,9 +151,17 @@ def rule_from_subentry(subentry: Any) -> Rule | None:
 class RuleEngine:
     """Watches entities and dispatches Matrix notifications for rules."""
 
-    def __init__(self, hass: HomeAssistant, client: MatrixClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: MatrixClient,
+        telegram: TelegramClient | None = None,
+        telegram_chats: list[str] | None = None,
+    ) -> None:
         self._hass = hass
         self._client = client
+        self._telegram = telegram
+        self._telegram_chats = telegram_chats or []
         self._rules: dict[str, Rule] = {}
         self._unsubs: list[callable] = []
         self._last_sent: dict[str, datetime] = {}
@@ -392,29 +419,103 @@ class RuleEngine:
         if rule.camera and (want_snapshot or (want_video and video is None)):
             image = await self._async_snapshot(rule.camera, rule.camera_filename)
 
-        for room in rule.rooms:
+        # build delivery targets: (channel, target_id)
+        targets: list[tuple[str, str]] = []
+        if CHANNEL_MATRIX in rule.channels:
+            targets.extend(("matrix", room) for room in rule.rooms)
+        if CHANNEL_TELEGRAM in rule.channels and self._telegram:
+            chats = rule.telegram_chats or self._telegram_chats
+            targets.extend(("telegram", chat) for chat in chats)
+
+        if not targets:
+            _LOGGER.warning(
+                "Rule '%s': no delivery targets (channels=%s)",
+                rule.title,
+                rule.channels,
+            )
+            return
+
+        for channel, target in targets:
+            if channel == "matrix":
+                await self._async_send_matrix_target(
+                    rule, target, message, image, video
+                )
+            else:
+                await self._async_send_telegram_target(
+                    rule, target, message, image, video
+                )
+
+    async def _async_send_matrix_target(
+        self,
+        rule: Rule,
+        room: str,
+        message: str,
+        image: tuple[bytes, str, str, int | None, int | None] | None,
+        video: tuple[bytes, int, int | None, int | None] | None,
+    ) -> None:
+        """Send to a Matrix room with one re-login retry."""
+        try:
+            await self._async_send_to_room(room, message, image, video)
+            _LOGGER.warning("Rule '%s' sent to %s", rule.title, room)
+        except MatrixSendError:
             try:
+                await self._hass.async_add_executor_job(self._client.login)
                 await self._async_send_to_room(room, message, image, video)
                 _LOGGER.warning(
-                    "Rule '%s' sent to %s", rule.title, room
-                )
-            except MatrixSendError:
-                try:
-                    await self._hass.async_add_executor_job(self._client.login)
-                    await self._async_send_to_room(
-                        room, message, image, video
-                    )
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.error(
-                        "Rule '%s' → %s failed: %s", rule.title, room, err
-                    )
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.exception(
-                    "Rule '%s' → %s unexpected error: %s",
+                    "Rule '%s' sent to %s (after re-login)",
                     rule.title,
                     room,
-                    err,
                 )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error(
+                    "Rule '%s' → %s failed: %s", rule.title, room, err
+                )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception(
+                "Rule '%s' → %s unexpected error: %s",
+                rule.title,
+                room,
+                err,
+            )
+
+    async def _async_send_telegram_target(
+        self,
+        rule: Rule,
+        chat_id: str,
+        message: str,
+        image: tuple[bytes, str, str, int | None, int | None] | None,
+        video: tuple[bytes, int, int | None, int | None] | None,
+    ) -> None:
+        """Send to a Telegram chat (text first, then video/image)."""
+        assert self._telegram is not None
+        tg = self._telegram
+        try:
+            await self._hass.async_add_executor_job(
+                tg.send_text, chat_id, message
+            )
+            if video is not None:
+                content, duration_ms, w, h = video
+                await self._hass.async_add_executor_job(
+                    lambda: tg.send_video(
+                        chat_id, content, duration=duration_ms // 1000,
+                        width=w, height=h,
+                    )
+                )
+            if image is not None:
+                content, _ctype, _fname, _w, _h = image
+                await self._hass.async_add_executor_job(
+                    tg.send_photo, chat_id, content
+                )
+            _LOGGER.warning(
+                "Rule '%s' sent to telegram chat %s", rule.title, chat_id
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "Rule '%s' → telegram %s failed: %s",
+                rule.title,
+                chat_id,
+                err,
+            )
 
     async def _async_send_to_room(
         self,

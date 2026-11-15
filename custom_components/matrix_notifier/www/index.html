@@ -244,6 +244,26 @@ textarea{min-height:80px;resize:vertical}
     </div>
   </div>
   <div class="card">
+    <h2>✈️ Telegram</h2>
+    <div id="tgStatus" style="font-size:14px;color:var(--muted);margin-bottom:12px">Не настроен</div>
+    <div class="form-row">
+      <label>Токен бота</label>
+      <input type="password" id="tgToken" placeholder="123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Создайте бота у <b>@BotFather</b>. Пусто = оставить текущий токен</div>
+    </div>
+    <div class="form-row">
+      <label>Chat ID (через запятую)</label>
+      <input type="text" id="tgChats" placeholder="-1001234567890, 123456789">
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Узнать свой: <b>@userinfobot</b>. Бот должен быть добавлен в чат/группу/канал</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="saveTelegram()">Сохранить</button>
+      <button class="btn btn-secondary" onclick="testTelegram()">✈️ Тест</button>
+      <button class="btn btn-danger hidden" id="tgClearBtn" onclick="clearTelegram()">Отключить</button>
+    </div>
+    <div id="tgResult" style="font-size:13px;margin-top:10px"></div>
+  </div>
+  <div class="card">
     <h2>Токен Home Assistant</h2>
     <div id="tokenAutoInfo" style="font-size:14px;color:var(--success);margin-bottom:12px">✅ Токен определён автоматически</div>
     <div class="form-row">
@@ -296,9 +316,25 @@ textarea{min-height:80px;resize:vertical}
       </select>
     </div>
     <div class="form-row">
+      <label>Каналы доставки *</label>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px">
+          <input type="checkbox" id="ruleChMatrix" checked style="width:auto"> 📨 Matrix
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px">
+          <input type="checkbox" id="ruleChTelegram" style="width:auto"> ✈️ Telegram
+        </label>
+      </div>
+    </div>
+    <div class="form-row" id="ruleRoomsRow">
       <label>Комнаты *</label>
       <select id="ruleRooms" multiple size="4" style="min-height:100px"></select>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">Удерживайте Ctrl/Cmd для выбора нескольких</div>
+    </div>
+    <div class="form-row hidden" id="ruleTgRow">
+      <label>Чаты Telegram</label>
+      <select id="ruleTgChats" multiple size="3" style="min-height:80px"></select>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Не выбрано = все настроенные чаты. Telegram настраивается в Настройках.</div>
     </div>
     <div class="form-row">
       <label>Сообщение (Jinja2-шаблон)</label>
@@ -402,7 +438,8 @@ async function loadStatus(){
     $('#statRules').textContent=STATUS.rules?.length||0;
     $('#statRooms').textContent=STATUS.rooms?.length||0;
     $('#statState').textContent=STATUS.state||'—';
-    $('#dashInfo').innerHTML=STATUS.configured?`<b>${STATUS.title}</b><br>Rooms: ${STATUS.rooms.join(', ')||'—'}`:'Интеграция не настроена.';
+    const tgLine=STATUS.telegram?.configured?`<br>✈️ Telegram: ${STATUS.telegram.chats?.length||0} чат(ов)${STATUS.telegram.bot?' (@'+STATUS.telegram.bot+')':''}`:'';
+    $('#dashInfo').innerHTML=STATUS.configured?`<b>${STATUS.title}</b><br>Rooms: ${STATUS.rooms.join(', ')||'—'}${tgLine}`:'Интеграция не настроена.';
     renderRules(STATUS.rules||[]);
     await loadRooms();
     refreshSettings();
@@ -434,6 +471,13 @@ function fillRooms(){
   });
   // restore previous selection
   [...rsel.options].forEach(o=>{if(prev.includes(o.value))o.selected=true});
+  // telegram chats for rule modal
+  const tsel=$('#ruleTgChats');const tprev=[...tsel.selectedOptions].map(o=>o.value);tsel.innerHTML='';
+  (STATUS?.telegram?.chats||[]).forEach(c=>{
+    const o=document.createElement('option');o.value=c;o.textContent=c;
+    tsel.appendChild(o);
+  });
+  [...tsel.options].forEach(o=>{if(tprev.includes(o.value))o.selected=true});
 }
 
 function fillVideoCameras(){
@@ -511,11 +555,12 @@ function renderRules(rules){
   rules.forEach(r=>{
     const li=document.createElement('li');li.className='rule-item';
     const entityLabel=r.automation?`⚙️ ${r.automation}`:r.entity_id;
+    const ch=(r.channels&&r.channels.length?r.channels:['matrix']).map(c=>c==='telegram'?'✈️':'📨').join('');
     li.innerHTML=`
       <label class="toggle"><input type="checkbox" ${r.enabled?'checked':''} onchange="toggleRule('${r.subentry_id}',this.checked)"><span class="slider"></span></label>
       <div class="info">
         <div class="name">${esc(r.title)}</div>
-        <div class="meta">${esc(entityLabel)} → ${esc(r.to_state||'any')} | ${r.rooms?.length||0} комнат${r.camera?' | 📷':''}</div>
+        <div class="meta">${ch} ${esc(entityLabel)} → ${esc(r.to_state||'any')} | ${r.rooms?.length||0} комнат${r.camera?' | 📷':''}</div>
       </div>
       <div class="actions">
         <button class="btn btn-primary btn-sm" onclick="testRule('${r.subentry_id}')" title="Тест правила">▶️</button>
@@ -555,9 +600,17 @@ function _fillRuleForm(rule){
   const vm=$('#ruleMediaMode').value;
   $('#ruleVideoDurationRow').classList.toggle('hidden',!(vm==='video'||vm==='both'));
   $('#ruleEnabled').checked=rule?.enabled!==false;
+  // delivery channels
+  const ch=rule?.channels&&rule.channels.length?rule.channels:['matrix'];
+  $('#ruleChMatrix').checked=ch.includes('matrix');
+  $('#ruleChTelegram').checked=ch.includes('telegram');
   // select rooms in multi-select
   const rsel=$('#ruleRooms');
   [...rsel.options].forEach(o=>{o.selected=rule?.rooms?.includes(o.value)||false});
+  // select telegram chats in multi-select
+  const tsel=$('#ruleTgChats');
+  [...tsel.options].forEach(o=>{o.selected=rule?.telegram_chats?.includes(o.value)||false});
+  toggleChannels();
   $('#ruleModal').classList.add('open');
 }
 function closeRuleModal(){$('#ruleModal').classList.remove('open')}
@@ -574,12 +627,26 @@ $('#ruleMediaMode')?.addEventListener('change',function(){
   $('#ruleVideoDurationRow').classList.toggle('hidden',!v);
 });
 
+function toggleChannels(){
+  const m=$('#ruleChMatrix').checked,t=$('#ruleChTelegram').checked;
+  $('#ruleRoomsRow').classList.toggle('hidden',!m);
+  $('#ruleTgRow').classList.toggle('hidden',!t);
+}
+$('#ruleChMatrix')?.addEventListener('change',toggleChannels);
+$('#ruleChTelegram')?.addEventListener('change',toggleChannels);
+
 async function saveRule(){
   ruleError('');
   const name=$('#ruleName').value.trim();
   if(!name){ruleError('Введите название правила');return}
+  const channels=[];
+  if($('#ruleChMatrix').checked)channels.push('matrix');
+  if($('#ruleChTelegram').checked)channels.push('telegram');
+  if(!channels.length){ruleError('Выберите хотя бы один канал доставки');return}
   const rooms=[...$('#ruleRooms').selectedOptions].map(o=>o.value);
-  if(!rooms.length){ruleError('Выберите хотя бы одну комнату');return}
+  if(channels.includes('matrix')&&!rooms.length){ruleError('Выберите хотя бы одну комнату Matrix');return}
+  if(channels.includes('telegram')&&!STATUS?.telegram?.configured){ruleError('Telegram не настроен — добавьте его в Настройках');return}
+  const tgChats=[...$('#ruleTgChats').selectedOptions].map(o=>o.value);
   const isAutomation=$('#ruleTriggerType').value==='automation';
   const triggerEntity=isAutomation?$('#ruleAutomation').value:$('#ruleEntity').value;
   if(!triggerEntity){ruleError('Выберите '+(isAutomation?'автоматизацию':'сущность'));return}
@@ -592,6 +659,8 @@ async function saveRule(){
     automation:isAutomation?triggerEntity:null,
     to_state:$('#ruleToState').value,
     rooms,message:$('#ruleMessage').value,
+    channels,
+    telegram_chats:tgChats,
     camera:camera||null,
     camera_filename:'snapshot.jpg',
     media_mode:mediaMode,
@@ -773,7 +842,59 @@ async function refreshSettings(){
     const st=await api('/matrix_notifier/status');
     if(st.configured){$('#setupNotConfigured').classList.add('hidden');$('#setupConfigured').classList.remove('hidden');$('#setupAccount').textContent=st.title||'—'}
     else{$('#setupNotConfigured').classList.remove('hidden');$('#setupConfigured').classList.add('hidden')}
+    // telegram status
+    const tg=st.telegram||{};
+    if(tg.configured){
+      $('#tgStatus').innerHTML=`✅ Настроен${tg.bot?` — @${esc(tg.bot)}`:''} · чатов: <b>${tg.chats?.length||0}</b>`;
+      $('#tgClearBtn').classList.remove('hidden');
+      if(!$('#tgChats').value)$('#tgChats').value=(tg.chats||[]).join(', ');
+    }else{
+      $('#tgStatus').textContent='Не настроен (необязательный канал)';
+      $('#tgClearBtn').classList.add('hidden');
+    }
   }catch(e){}
+}
+
+async function saveTelegram(){
+  const token=$('#tgToken').value.trim();
+  const chats=$('#tgChats').value.trim();
+  const btn=event.currentTarget;btn.disabled=true;
+  try{
+    const body={};
+    if(token)body.telegram_bot_token=token;
+    if(chats)body.chats=chats;
+    if(!token&&!chats){toast('Введите токен или chat ID',false);btn.disabled=false;return}
+    const res=await api('/matrix_notifier/telegram',{method:'POST',body:JSON.stringify(body)});
+    toast('Telegram сохранён ✓');
+    $('#tgToken').value='';
+    $('#tgResult').innerHTML=`<span style="color:var(--success)">✅ @${esc(res.bot||'?')} · чатов: ${res.chats?.length||0}</span>`;
+    setTimeout(()=>{refreshSettings();loadStatus()},800);
+  }catch(e){
+    $('#tgResult').innerHTML=`<span style="color:var(--danger)">❌ ${esc(e.message)}</span>`;
+  }finally{btn.disabled=false}
+}
+
+async function testTelegram(){
+  const btn=event.currentTarget;btn.disabled=true;
+  try{
+    const res=await api('/matrix_notifier/telegram/test',{method:'POST'});
+    if(res.errors?.length){
+      $('#tgResult').innerHTML=`<span style="color:var(--success)">✅ Отправлено: ${res.sent.length}</span> <span style="color:var(--danger)">❌ ${esc(res.errors.join('; '))}</span>`;
+    }else{
+      $('#tgResult').innerHTML=`<span style="color:var(--success)">✅ Тест отправлен в ${res.sent.length} чат(ов)</span>`;
+    }
+  }catch(e){
+    $('#tgResult').innerHTML=`<span style="color:var(--danger)">❌ ${esc(e.message)}</span>`;
+  }finally{btn.disabled=false}
+}
+
+async function clearTelegram(){
+  if(!confirm('Отключить Telegram?'))return;
+  try{
+    await api('/matrix_notifier/telegram',{method:'POST',body:JSON.stringify({clear:true})});
+    $('#tgChats').value='';$('#tgToken').value='';$('#tgResult').innerHTML='';
+    toast('Telegram отключён');setTimeout(()=>{refreshSettings();loadStatus()},800);
+  }catch(e){toast(e.message,false)}
 }
 
 async function handleSetup(){

@@ -15,11 +15,14 @@ from .const import (
     CONF_HOMESERVER,
     CONF_PASSWORD,
     CONF_ROOMS,
+    CONF_TELEGRAM_BOT_TOKEN,
+    CONF_TELEGRAM_CHATS,
     CONF_USERNAME,
     DOMAIN,
     SUBENTRY_RULE,
 )
 from .notifier import MatrixClient, MatrixLoginError
+from .telegram import TelegramClient, TelegramError, parse_chat_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +50,21 @@ class StatusView(HomeAssistantView):
             for sid, s in entry.subentries.items()
             if s.subentry_type == SUBENTRY_RULE
         ]
+        ctx = hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
+        tg_client: TelegramClient | None = ctx.get("telegram")
         return self.json(
             {
                 "configured": True,
                 "state": entry.state.value,
                 "title": entry.title,
                 "rooms": entry.data.get("rooms", []),
+                "telegram": {
+                    "configured": bool(
+                        entry.data.get(CONF_TELEGRAM_BOT_TOKEN)
+                    ),
+                    "chats": entry.data.get(CONF_TELEGRAM_CHATS) or [],
+                    "bot": tg_client.bot_username if tg_client else None,
+                },
                 "rules": rules,
             }
         )
@@ -635,6 +647,115 @@ class VideoView(HomeAssistantView):
         )
 
 
+class TelegramView(HomeAssistantView):
+    """POST /api/matrix_notifier/telegram — save/clear Telegram config."""
+
+    url = "/api/matrix_notifier/telegram"
+    name = "api:matrix_notifier:telegram"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        body: dict[str, Any] = await request.json()
+
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            return self.json_message("No config entry", status_code=404)
+        entry = entries[0]
+        data = dict(entry.data)
+
+        # explicit clear
+        if body.get("clear"):
+            data.pop(CONF_TELEGRAM_BOT_TOKEN, None)
+            data.pop(CONF_TELEGRAM_CHATS, None)
+            hass.config_entries.async_update_entry(entry, data=data)
+            return self.json({"success": True, "configured": False})
+
+        new_token = (body.get(CONF_TELEGRAM_BOT_TOKEN) or "").strip()
+        token = new_token or data.get(CONF_TELEGRAM_BOT_TOKEN)
+
+        if not token:
+            return self.json_message(
+                "bot_token required (or send clear:true)",
+                status_code=400,
+            )
+
+        # validate a newly supplied token
+        if new_token:
+            try:
+                bot_username = await hass.async_add_executor_job(
+                    TelegramClient(new_token).get_me
+                )
+            except TelegramError as err:
+                return self.json_message(
+                    f"Invalid Telegram token: {err}", status_code=400
+                )
+        else:
+            ctx = hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
+            tg: TelegramClient | None = ctx.get("telegram")
+            bot_username = tg.bot_username if tg else None
+
+        data[CONF_TELEGRAM_BOT_TOKEN] = token
+        if "chats" in body or CONF_TELEGRAM_CHATS in body:
+            data[CONF_TELEGRAM_CHATS] = parse_chat_ids(
+                body.get("chats", body.get(CONF_TELEGRAM_CHATS))
+            )
+        else:
+            data.setdefault(CONF_TELEGRAM_CHATS, [])
+
+        hass.config_entries.async_update_entry(entry, data=data)
+        return self.json(
+            {
+                "success": True,
+                "configured": True,
+                "chats": data.get(CONF_TELEGRAM_CHATS) or [],
+                "bot": bot_username,
+            }
+        )
+
+
+class TelegramTestView(HomeAssistantView):
+    """POST /api/matrix_notifier/telegram/test — send a test message."""
+
+    url = "/api/matrix_notifier/telegram/test"
+    name = "api:matrix_notifier:telegram:test"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            return self.json_message("No config entry", status_code=404)
+        entry = entries[0]
+
+        ctx = hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
+        tg: TelegramClient | None = ctx.get("telegram")
+        chats: list[str] = entry.data.get(CONF_TELEGRAM_CHATS) or []
+
+        if tg is None:
+            return self.json_message(
+                "Telegram is not configured", status_code=400
+            )
+        if not chats:
+            return self.json_message(
+                "No Telegram chats configured", status_code=400
+            )
+
+        text = (
+            "✅ Matrix Notifier\n"
+            "Тест Telegram-канала — уведомления работают."
+        )
+        sent: list[str] = []
+        errors: list[str] = []
+        for chat in chats:
+            try:
+                await hass.async_add_executor_job(tg.send_text, chat, text)
+                sent.append(chat)
+            except Exception as err:  # noqa: BLE001
+                errors.append(f"{chat}: {err}")
+        return self.json({"sent": sent, "errors": errors})
+
+
 def async_register_api(hass: HomeAssistant) -> None:
     """Register all REST API views."""
     _LOGGER.warning("Matrix Notifier: registering REST API views")
@@ -651,4 +772,6 @@ def async_register_api(hass: HomeAssistant) -> None:
     hass.http.register_view(KickUserView)
     hass.http.register_view(RoomMembersView)
     hass.http.register_view(VideoView)
+    hass.http.register_view(TelegramView)
+    hass.http.register_view(TelegramTestView)
     _LOGGER.warning("Matrix Notifier: REST API views registered")

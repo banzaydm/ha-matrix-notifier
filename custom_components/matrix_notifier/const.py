@@ -24,6 +24,14 @@ CONF_VIDEO_DURATION = "video_duration"
 CONF_VIDEO_QUALITY = "video_quality"
 CONF_MEDIA_MODE = "media_mode"
 
+CONF_CHANNELS = "channels"
+CONF_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+CONF_TELEGRAM_CHATS = "telegram_chats"
+
+CHANNEL_MATRIX = "matrix"
+CHANNEL_TELEGRAM = "telegram"
+CHANNELS = [CHANNEL_MATRIX, CHANNEL_TELEGRAM]
+
 MEDIA_MODE_NONE = "none"
 MEDIA_MODE_SNAPSHOT = "snapshot"
 MEDIA_MODE_VIDEO = "video"
