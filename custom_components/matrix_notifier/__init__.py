@@ -157,18 +157,29 @@ def _register_panel(hass: HomeAssistant) -> None:
     """Register an iframe panel in the HA sidebar."""
     from homeassistant.components import frontend
 
+    www_dir = Path(__file__).parent / "www"
+
     # cache-bust: use file mtime so browser always fetches latest HTML
-    src = Path(__file__).parent / "www" / "index.html"
     try:
-        mtime = int(src.stat().st_mtime)
+        mtime = int((www_dir / "index.html").stat().st_mtime)
     except OSError:
         mtime = 0
+
+    # custom icon set (window.customIconsets["mn"] -> mn:logo in the sidebar
+    # and anywhere else ha-icon is used), loaded as an extra frontend module
+    try:
+        icons_mtime = int((www_dir / "icons.js").stat().st_mtime)
+    except OSError:
+        icons_mtime = 0
+    frontend.add_extra_js_url(
+        hass, f"/local/matrix_notifier/icons.js?v={icons_mtime}"
+    )
 
     frontend.async_register_built_in_panel(
         hass,
         component_name="iframe",
         sidebar_title="Matrix Notifier",
-        sidebar_icon="mdi:message-alert",
+        sidebar_icon="mn:logo",
         config={"url": f"/local/matrix_notifier/index.html?v={mtime}"},
         frontend_url_path="matrix-notifier",
     )
