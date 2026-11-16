@@ -144,13 +144,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _copy_panel_files(hass: HomeAssistant) -> None:
-    """Copy the web panel HTML into HA's www/ folder."""
-    src = Path(__file__).parent / "www" / "index.html"
+    """Copy the web panel files (HTML, logo, favicon) into HA's www/."""
+    src_dir = Path(__file__).parent / "www"
     dst_dir = Path(hass.config.path("www")) / "matrix_notifier"
     dst_dir.mkdir(parents=True, exist_ok=True)
-    dst = dst_dir / "index.html"
-    if src.exists():
-        shutil.copy2(src, dst)
+    for src in src_dir.iterdir():
+        if src.is_file():
+            shutil.copy2(src, dst_dir / src.name)
 
 
 def _register_panel(hass: HomeAssistant) -> None:

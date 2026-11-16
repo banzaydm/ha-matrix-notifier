@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" width="140" alt="Matrix Notifier">
+</p>
+
 # Matrix Notifier для Home Assistant
 
 Интеграция для отправки уведомлений из Home Assistant в комнаты Matrix через удобный UI: текст, снимки камер и видеозаписи с RTSP.
